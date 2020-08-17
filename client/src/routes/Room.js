@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 import Peer from "simple-peer";
 import styled from "styled-components";
+import useScreenRecording from "use-screen-recording";
 
 const Container = styled.div`
     padding: 20px;
@@ -36,46 +37,74 @@ const videoConstraints = {
     height: window.innerHeight / 2,
     width: window.innerWidth / 2
 };
+/*const RecordView = () => (
+    <div>
+        <ReactMediaRecorder
+            video
+            render={({ status, startRecording, stopRecording, mediaBlobUrl }) => (
+                <div>
+                    <p>{status}</p>
+                    <button onClick={startRecording}>Start Recording</button>
+                    <button onClick={stopRecording}>Stop Recording</button>
+                    <video src={mediaBlobUrl} controls autoplay loop />
+                </div>
+            )}
+        />
+    </div>
+);*/
+
 
 const Room = (props) => {
     const [peers, setPeers] = useState([]);
     const socketRef = useRef();
     const userVideo = useRef();
+    const screenVideo = useRef();
     const peersRef = useRef([]);
     const roomID = props.match.params.roomID;
+    const { isRecording, recording, toggleRecording } = useScreenRecording();
 
     useEffect(() => {
         socketRef.current = io.connect("/");
         navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true }).then(stream => {
-            userVideo.current.srcObject = stream;
-            socketRef.current.emit("join room", roomID);
-            socketRef.current.on("all users", users => {
-                const peers = [];
-                users.forEach(userID => {
-                    const peer = createPeer(userID, socketRef.current.id, stream);
-                    peersRef.current.push({
-                        peerID: userID,
-                        peer,
+            navigator.mediaDevices.getDisplayMedia({
+                video: true
+            }).then(
+                stream2 => {
+                    console.log(stream2);
+                    screenVideo.current.srcObject = stream2;
+                    userVideo.current.srcObject = stream;
+                    socketRef.current.emit("join room", roomID);
+                    socketRef.current.on("all users", users => {
+                        const peers = [];
+                        users.forEach(userID => {
+                            const peer = createPeer(userID, socketRef.current.id, stream);
+                            peersRef.current.push({
+                                peerID: userID,
+                                peer,
+                            })
+                            peers.push(peer);
+                        })
+                        setPeers(peers);
                     })
-                    peers.push(peer);
-                })
-                setPeers(peers);
-            })
 
-            socketRef.current.on("user joined", payload => {
-                const peer = addPeer(payload.signal, payload.callerID, stream);
-                peersRef.current.push({
-                    peerID: payload.callerID,
-                    peer,
-                })
+                    socketRef.current.on("user joined", payload => {
+                        const peer = addPeer(payload.signal, payload.callerID, stream);
+                        peersRef.current.push({
+                            peerID: payload.callerID,
+                            peer,
+                        })
 
-                setPeers(users => [...users, peer]);
-            });
+                        setPeers(users => [...users, peer]);
+                    });
 
-            socketRef.current.on("receiving returned signal", payload => {
-                const item = peersRef.current.find(p => p.peerID === payload.id);
-                item.peer.signal(payload.signal);
-            });
+                    socketRef.current.on("receiving returned signal", payload => {
+                        const item = peersRef.current.find(p => p.peerID === payload.id);
+                        item.peer.signal(payload.signal);
+                    });
+                }
+            );
+
+
         })
     }, []);
 
@@ -108,10 +137,25 @@ const Room = (props) => {
 
         return peer;
     }
-
+    function f(t) {
+        console.log(userVideo)
+    }
     return (
         <Container>
+            <div>
+                <button onClick={toggleRecording}>
+                    {isRecording ? "Stop" : "Start Recording"}
+                </button>
+
+                {!!recording && (
+                    <video autoPlay src={recording && URL.createObjectURL(recording)} />
+                )
+                }
+
+                <button onClick={f(recording)}>test </button>
+            </div>
             <StyledVideo muted ref={userVideo} autoPlay playsInline />
+            <StyledVideo muted ref={screenVideo} autoPlay playsInline />
             {peers.map((peer, index) => {
                 return (
                     <Video key={index} peer={peer} />
@@ -120,5 +164,6 @@ const Room = (props) => {
         </Container>
     );
 };
+
 
 export default Room;
